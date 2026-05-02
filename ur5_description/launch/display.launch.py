@@ -11,18 +11,23 @@ def generate_launch_description():
     # Get package directory
     pkg_share = get_package_share_directory('ur5_description')
     
-    # Path to URDF file
-    urdf_file = os.path.join(pkg_share, 'urdf', 'ur.urdf.xacro')
+    # Path to URDF file WITH GRIPPER
+    urdf_file = os.path.join(pkg_share, 'urdf', 'ur5_with_gripper.urdf.xacro')
     
     # Path to RViz config (optional, will create later)
-    rviz_config_file = os.path.join(pkg_share, 'config', 'display.rviz')
+    rviz_config_file = os.path.join(pkg_share, 'rviz', 'display.rviz')
     
-    # Process the URDF file
-    robot_description_content = Command(['xacro ', urdf_file])
+    # Process the URDF file with required arguments
+    robot_description_content = Command([
+        'xacro ', urdf_file,
+        ' name:=ur5',
+        ' ur_type:=ur5',
+        ' tf_prefix:=""',
+    ])
     
     robot_description = {'robot_description': robot_description_content}
     
-    # Single Robot State Publisher (publishes all transforms from the dual robot URDF)
+    # Robot State Publisher
     robot_state_publisher = Node(
         package='robot_state_publisher',
         executable='robot_state_publisher',
@@ -31,7 +36,7 @@ def generate_launch_description():
         parameters=[robot_description],
     )
     
-    # Joint State Publisher GUI (to control both robots)
+    # Joint State Publisher GUI (to control robot and gripper)
     joint_state_publisher_gui = Node(
         package='joint_state_publisher_gui',
         executable='joint_state_publisher_gui',

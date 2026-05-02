@@ -1,16 +1,19 @@
 <?xml version="1.0"?>
-<robot xmlns:xacro="http://wiki.ros.org/xacro" name="$(arg name)">
-   <!-- robot name parameter -->
+<robot xmlns:xacro="http://wiki.ros.org/xacro" name="ur5_with_gripper">
+   
+   <!-- Robot name parameter -->
    <xacro:arg name="name" default="ur5"/>
-   <!-- import main macro -->
+   <xacro:arg name="ur_type" default="ur5"/>
+   <xacro:arg name="tf_prefix" default=""/>
+   
+   <!-- Import main UR macro -->
    <xacro:include filename="$(find ur5_description)/urdf/ur_macro.xacro"/>
+   
+   <!-- Import gripper macro -->
+   <!-- <xacro:include filename="$(find ur5_description)/urdf/robotiq_2f85_gripper.xacro"/> -->
+    <xacro:include filename="$(find ur5_description)/urdf/robotiq_arg85_gripper_macro.xacro"/>
 
-   <!-- possible 'ur_type' values: ur3, ur5, ur10, ur3e, ur5e, ur7e, ur10e, ur12e, ur16e, ur8long, ur15, ur18, ur20, ur30 -->
-   <!-- the default value should raise an error in case this was called without defining the type -->
-   <xacro:arg name="ur_type" default="ur5x"/>
-
-   <!-- parameters -->
-   <xacro:arg name="tf_prefix" default="" />
+   <!-- Parameters -->
    <xacro:arg name="joint_limit_params" default="$(find ur5_description)/config/$(arg ur_type)/joint_limits.yaml"/>
    <xacro:arg name="kinematics_params" default="$(find ur5_description)/config/$(arg ur_type)/default_kinematics.yaml"/>
    <xacro:arg name="physical_params" default="$(find ur5_description)/config/$(arg ur_type)/physical_parameters.yaml"/>
@@ -19,14 +22,12 @@
    <xacro:arg name="safety_limits" default="false"/>
    <xacro:arg name="safety_pos_margin" default="0.15"/>
    <xacro:arg name="safety_k_position" default="20"/>
+   <xacro:arg name="force_abs_paths" default="false"/>
 
-   <!--When using gazebo simulations absolute paths are necessary.-->
-   <xacro:arg name="force_abs_paths" default="false" />
+   <!-- Create world link -->
+   <link name="world"/>
 
-   <!-- create link fixed to the "world" -->
-   <link name="world" />
-
-   <!-- arm -->
+   <!-- UR5 Arm -->
    <xacro:ur_robot
      name="$(arg name)"
      tf_prefix="$(arg tf_prefix)"
@@ -38,8 +39,13 @@
      safety_limits="$(arg safety_limits)"
      safety_pos_margin="$(arg safety_pos_margin)"
      safety_k_position="$(arg safety_k_position)"
-     force_abs_paths="$(arg force_abs_paths)"
-     >
-     <origin xyz="0 0 0" rpy="0 0 0" />          <!-- position robot in the world -->
+     force_abs_paths="$(arg force_abs_paths)">
+     <origin xyz="0 0 0" rpy="0 0 0"/>
    </xacro:ur_robot>
+
+   <!-- Add Robotiq 2F-85 Gripper -->
+   <xacro:robotiq_2f85_gripper prefix="" parent="tool0">
+     <origin xyz="0 0 0" rpy="0 0 0"/>
+   </xacro:robotiq_2f85_gripper>
+
 </robot>
