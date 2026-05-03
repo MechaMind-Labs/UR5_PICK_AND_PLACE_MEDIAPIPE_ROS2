@@ -2,31 +2,58 @@
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
 
   <xacro:include filename="$(find ur5_description)/urdf/inc/ur_joint_control.xacro" />
-  <xacro:include filename="$(find ur5_description)/urdf/inc/ur_sensors.xacro" />
 
+  <!--
+    ros2_control block for Ignition Gazebo (ign_ros2_control / ROS 2 Humble).
+
+    Plugin: ign_ros2_control/IgnitionSystem
+      - Reads joint states from the Ignition physics engine
+      - Writes position commands back into Ignition
+      - This is what makes the arm hold its position and respond to
+        JointTrajectory commands from arm_controller.
+
+    DO NOT add the fake FTS / TCP-pose sensors from ur_sensors.xacro here.
+    IgnitionSystem does not implement those state interfaces; including them
+    causes "[WARN] state interface not found" on every tick and can prevent
+    the system from initialising joint states correctly.
+  -->
   <xacro:macro name="ur_ros2_control" params="
     name
     tf_prefix
-    mock_sensor_commands:=false
     initial_positions:=${dict(shoulder_pan_joint=0.0,shoulder_lift_joint=-1.57,elbow_joint=0.0,wrist_1_joint=-1.57,wrist_2_joint=0.0,wrist_3_joint=0.0)}
     ">
 
     <ros2_control name="${name}" type="system">
       <hardware>
-        <!-- <plugin>mock_components/GenericSystem</plugin> -->
         <plugin>ign_ros2_control/IgnitionSystem</plugin>
-        <!-- <param name="mock_sensor_commands">${mock_sensor_commands}</param> -->
-        <!-- <param name="state_following_offset">0.0</param> -->
-        <!-- <param name="calculate_dynamics">true</param> -->
       </hardware>
+
+      <!-- UR5 arm — 6 DOF revolute joints -->
       <xacro:ur_joint_control_description
         tf_prefix="${tf_prefix}"
         initial_positions="${initial_positions}"
       />
 
-      <xacro:ur_sensors
-        tf_prefix="${tf_prefix}"
-      />
+      <!--
+        Robotiq 2F-85 — only the actuated finger_joint goes into ros2_control.
+        The 5 mimic joints (left/right inner/outer knuckle+finger) are purely
+        kinematic; robot_state_publisher propagates them from finger_joint via
+        the <mimic> tags in the URDF.  Putting them here would cause
+        "duplicate joint" errors.
+      -->
+      <joint name="${tf_prefix}finger_joint">
+        <command_interface name="position">
+          <param name="min">0.0</param>
+          <param name="max">0.725</param>
+        </command_interface>
+        <state_interface name="position">
+          <param name="initial_value">0.0</param>
+        </state_interface>
+        <state_interface name="velocity">
+          <param name="initial_value">0.0</param>
+        </state_interface>
+      </joint>
+
     </ros2_control>
   </xacro:macro>
 </robot>

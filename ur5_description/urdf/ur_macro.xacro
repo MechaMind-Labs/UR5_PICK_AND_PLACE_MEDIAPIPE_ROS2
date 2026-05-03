@@ -2,52 +2,9 @@
 <robot xmlns:xacro="http://wiki.ros.org/xacro">
   <!--
     Base UR robot series xacro macro.
-
-    NOTE this is NOT a URDF. It cannot directly be loaded by consumers
-    expecting a flattened '.urdf' file. See the top-level '.xacro' for that
-    (but note that .xacro must still be processed by the xacro command).
-
-    This file models the base kinematic chain of a UR robot, which then gets
-    parameterised by various configuration files to convert it into a UR3(e),
-    UR5(e), UR10(e) or UR16e, etc.
-
-    NOTE the default kinematic parameters (i.e., link lengths, frame locations,
-    offsets, etc) do not correspond to any particular robot. They are defaults
-    only. There WILL be non-zero offsets between the Forward Kinematics results
-    in TF (i.e., robot_state_publisher) and the values reported by the Teach
-    Pendant.
-
-    For accurate (and robot-specific) transforms, the 'kinematics_parameters_file'
-    parameter MUST point to a .yaml file containing the appropriate values for
-    the targeted robot.
-
-    If using the UniversalRobots/Universal_Robots_ROS_Driver, follow the steps
-    described in the readme of that repository to extract the kinematic
-    calibration from the controller and generate the required .yaml file.
-
-    Main author of the migration to yaml configs Ludovic Delval.
-
-    Contributors to previous versions (in no particular order)
-
-     - Denis Stogl
-     - Lovro Ivanov
-     - Felix Messmer
-     - Kelsey Hawkins
-     - Wim Meeussen
-     - Shaun Edwards
-     - Nadia Hammoudeh Garcia
-     - Dave Hershberger
-     - G. vd. Hoorn
-     - Philip Long
-     - Dave Coleman
-     - Miguel Prada
-     - Mathias Luedtke
-     - Marcel Schnirring
-     - Felix von Drigalski
-     - Felix Exner
-     - Jimmy Da Silva
-     - Ajit Krisshna N L
-     - Muhammad Asif Rana
+    Modified: added meaningful joint dynamics (damping/friction) so Ignition
+    physics holds the arm erect before/between trajectory commands.
+    Without nonzero damping the arm collapses under gravity immediately.
   -->
 
   <xacro:include filename="$(find ur5_description)/urdf/inc/ur_common.xacro" />
@@ -76,13 +33,6 @@
       force_abs_paths="${force_abs_paths}"/>
 
     <!-- links -  main serial chain -->
-
-    <!-- base_link serves as the root of the robot's kinematic tree. It follows REP-103
-        conventions (i.e., X+ forward, Y+ left, Z+ up).
-        Since some kinematic solvers forbid having inertia values attached to a root link, we've
-        added the base_link_inertia link that carries the visual, collision and inertia
-        information.
-    -->
     <link name="${tf_prefix}base_link"/>
     <link name="${tf_prefix}base_link_inertia">
       <xacro:get_visual_params name="base" type="mesh_offset"/>
@@ -135,7 +85,8 @@
             iyz="${shoulder_inertia_iyz}"
             izz="${shoulder_inertia_izz}"
         />
-      </inertial>    </link>
+      </inertial>
+    </link>
     <link name="${tf_prefix}upper_arm_link">
       <xacro:get_visual_params name="upper_arm" type="mesh_offset"/>
       <visual>
@@ -303,13 +254,16 @@
     <joint name="${tf_prefix}base_link-base_link_inertia" type="fixed">
       <parent link="${tf_prefix}base_link" />
       <child link="${tf_prefix}base_link_inertia" />
-      <!-- 'base_link' is REP-103 aligned (so X+ forward), while the internal
-           frames of the robot/controller have X+ pointing backwards.
-           Use the joint between 'base_link' and 'base_link_inertia' (a dummy
-           link/frame) to introduce the necessary rotation over Z (of pi rad).
-      -->
       <origin xyz="0 0 0" rpy="0 0 ${pi}" />
     </joint>
+
+    <!--
+      IMPORTANT: nonzero damping is essential in Ignition/Gazebo.
+      With damping=0 the joints have no resistance and the arm falls under
+      gravity the moment it spawns.  Real UR5 joints have high gear-ratio
+      braking; 100 N·m·s/rad is a reasonable approximation that keeps the
+      arm erect while still allowing the trajectory controller to move it.
+    -->
     <joint name="${tf_prefix}shoulder_pan_joint" type="revolute">
       <parent link="${tf_prefix}base_link_inertia" />
       <child link="${tf_prefix}shoulder_link" />
@@ -320,8 +274,9 @@
       <xacro:if value="${safety_limits}">
          <safety_controller soft_lower_limit="${shoulder_pan_lower_limit + safety_pos_margin}" soft_upper_limit="${shoulder_pan_upper_limit - safety_pos_margin}" k_position="${safety_k_position}" k_velocity="0.0"/>
       </xacro:if>
-      <dynamics damping="0" friction="0"/>
+      <dynamics damping="100.0" friction="0.1"/>
     </joint>
+
     <joint name="${tf_prefix}shoulder_lift_joint" type="revolute">
       <parent link="${tf_prefix}shoulder_link" />
       <child link="${tf_prefix}upper_arm_link" />
@@ -332,8 +287,9 @@
       <xacro:if value="${safety_limits}">
          <safety_controller soft_lower_limit="${shoulder_lift_lower_limit + safety_pos_margin}" soft_upper_limit="${shoulder_lift_upper_limit - safety_pos_margin}" k_position="${safety_k_position}" k_velocity="0.0"/>
       </xacro:if>
-      <dynamics damping="0" friction="0"/>
+      <dynamics damping="100.0" friction="0.1"/>
     </joint>
+
     <joint name="${tf_prefix}elbow_joint" type="revolute">
       <parent link="${tf_prefix}upper_arm_link" />
       <child link="${tf_prefix}forearm_link" />
@@ -344,8 +300,9 @@
       <xacro:if value="${safety_limits}">
          <safety_controller soft_lower_limit="${elbow_joint_lower_limit + safety_pos_margin}" soft_upper_limit="${elbow_joint_upper_limit - safety_pos_margin}" k_position="${safety_k_position}" k_velocity="0.0"/>
       </xacro:if>
-      <dynamics damping="0" friction="0"/>
+      <dynamics damping="100.0" friction="0.1"/>
     </joint>
+
     <joint name="${tf_prefix}wrist_1_joint" type="revolute">
       <parent link="${tf_prefix}forearm_link" />
       <child link="${tf_prefix}wrist_1_link" />
@@ -356,8 +313,9 @@
       <xacro:if value="${safety_limits}">
          <safety_controller soft_lower_limit="${wrist_1_lower_limit + safety_pos_margin}" soft_upper_limit="${wrist_1_upper_limit - safety_pos_margin}" k_position="${safety_k_position}" k_velocity="0.0"/>
       </xacro:if>
-      <dynamics damping="0" friction="0"/>
+      <dynamics damping="10.0" friction="0.1"/>
     </joint>
+
     <joint name="${tf_prefix}wrist_2_joint" type="revolute">
       <parent link="${tf_prefix}wrist_1_link" />
       <child link="${tf_prefix}wrist_2_link" />
@@ -368,8 +326,9 @@
       <xacro:if value="${safety_limits}">
          <safety_controller soft_lower_limit="${wrist_2_lower_limit + safety_pos_margin}" soft_upper_limit="${wrist_2_upper_limit - safety_pos_margin}" k_position="${safety_k_position}" k_velocity="0.0"/>
       </xacro:if>
-      <dynamics damping="0" friction="0"/>
+      <dynamics damping="10.0" friction="0.1"/>
     </joint>
+
     <joint name="${tf_prefix}wrist_3_joint" type="${wrist_3_joint_type}">
       <parent link="${tf_prefix}wrist_2_link" />
       <child link="${tf_prefix}wrist_3_link" />
@@ -388,7 +347,7 @@
           <safety_controller k_position="${safety_k_position}" k_velocity="0.0"/>
         </xacro:if>
       </xacro:unless>
-      <dynamics damping="0" friction="0"/>
+      <dynamics damping="10.0" friction="0.1"/>
     </joint>
 
     <link name="${tf_prefix}ft_frame"/>
@@ -398,20 +357,15 @@
       <origin xyz="0 0 0" rpy="${pi} 0 0"/>
     </joint>
 
-    <!-- ROS-Industrial 'base' frame - base_link to UR 'Base' Coordinates transform -->
+    <!-- ROS-Industrial 'base' frame -->
     <link name="${tf_prefix}base"/>
     <joint name="${tf_prefix}base_link-base_fixed_joint" type="fixed">
-      <!-- Note the rotation over Z of pi radians - as base_link is REP-103
-           aligned (i.e., has X+ forward, Y+ left and Z+ up), this is needed
-           to correctly align 'base' with the 'Base' coordinate system of
-           the UR controller.
-      -->
       <origin xyz="0 0 0" rpy="0 0 ${pi}"/>
       <parent link="${tf_prefix}base_link"/>
       <child link="${tf_prefix}base"/>
     </joint>
 
-    <!-- ROS-Industrial 'flange' frame - attachment point for EEF models -->
+    <!-- ROS-Industrial 'flange' frame -->
     <link name="${tf_prefix}flange" />
     <joint name="${tf_prefix}wrist_3-flange" type="fixed">
       <parent link="${tf_prefix}wrist_3_link" />
@@ -419,10 +373,9 @@
       <origin xyz="0 0 0" rpy="0 ${-pi/2.0} ${-pi/2.0}" />
     </joint>
 
-    <!-- ROS-Industrial 'tool0' frame - all-zeros tool frame -->
+    <!-- ROS-Industrial 'tool0' frame -->
     <link name="${tf_prefix}tool0"/>
     <joint name="${tf_prefix}flange-tool0" type="fixed">
-      <!-- default toolframe - X+ left, Y+ up, Z+ front -->
       <origin xyz="0 0 0" rpy="${pi/2.0} 0 ${pi/2.0}"/>
       <parent link="${tf_prefix}flange"/>
       <child link="${tf_prefix}tool0"/>

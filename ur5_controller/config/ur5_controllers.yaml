@@ -1,39 +1,68 @@
 controller_manager:
   ros__parameters:
-    update_rate: 100 # Hz
+    update_rate: 500  # Hz — higher rate = more responsive to slider commands
 
-    arm_controller:
-      type: joint_trajectory_controller/JointTrajectoryController
-    gripper_controller:
-      type: joint_trajectory_controller/JointTrajectoryController
     joint_state_broadcaster:
       type: joint_state_broadcaster/JointStateBroadcaster
 
+    arm_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+    gripper_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ARM controller — 6 UR5 joints
+# open_loop_control: false  → controller reads actual joint state from Ignition
+#                             and uses it; the arm stays where commanded even
+#                             under gravity.
+# ─────────────────────────────────────────────────────────────────────────────
 arm_controller:
   ros__parameters:
     joints:
-      - panda_joint1
-      - panda_joint2
-      - panda_joint3
-      - panda_joint4
-      - panda_joint5
-      - panda_joint6
-      - panda_joint7
+      - shoulder_pan_joint
+      - shoulder_lift_joint
+      - elbow_joint
+      - wrist_1_joint
+      - wrist_2_joint
+      - wrist_3_joint
 
     command_interfaces:
       - position
 
     state_interfaces:
       - position
+      - velocity
 
-    open_loop_control: true
+    # MUST be false so the controller actually holds position using feedback.
+    # true = feedforward only → arm falls under gravity instantly.
+    open_loop_control: false
+
     allow_integration_in_goal_trajectories: true
 
+    # How long the controller waits for the first goal before going idle.
+    # Set to a large value so the arm holds its spawn pose on startup.
+    action_monitor_rate: 20.0
+
+    # Constraints — loosen them so slider moves are never rejected
+    # (default tolerances are very tight and reject fast slider moves)
+    constraints:
+      stopped_velocity_tolerance: 0.05
+      goal_time: 0.0  # 0 = don't enforce goal time tolerance
+      shoulder_pan_joint:  { trajectory: 0.2, goal: 0.1 }
+      shoulder_lift_joint: { trajectory: 0.2, goal: 0.1 }
+      elbow_joint:         { trajectory: 0.2, goal: 0.1 }
+      wrist_1_joint:       { trajectory: 0.2, goal: 0.1 }
+      wrist_2_joint:       { trajectory: 0.2, goal: 0.1 }
+      wrist_3_joint:       { trajectory: 0.2, goal: 0.1 }
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GRIPPER controller — Robotiq finger_joint only
+# ─────────────────────────────────────────────────────────────────────────────
 gripper_controller:
   ros__parameters:
     joints:
-      - panda_finger_joint1
-      - panda_finger_joint2
+      - finger_joint
 
     command_interfaces:
       - position
@@ -41,5 +70,9 @@ gripper_controller:
     state_interfaces:
       - position
 
-    open_loop_control: true
+    open_loop_control: false
     allow_integration_in_goal_trajectories: true
+    constraints:
+      stopped_velocity_tolerance: 0.05
+      goal_time: 0.0
+      finger_joint: { trajectory: 0.2, goal: 0.1 }

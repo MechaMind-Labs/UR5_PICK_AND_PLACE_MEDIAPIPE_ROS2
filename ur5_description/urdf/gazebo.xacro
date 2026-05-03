@@ -1,15 +1,13 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="ur5_with_gripper">
 
-  <xacro:arg name="is_ignition" default="true"/>
-
-  <!-- ROS 2 Humble -->
+  <!-- IgnitionROS2Control plugin — loaded by gz_sim when the robot is spawned -->
   <gazebo>
-    <xacro:if value="$(arg is_ignition)">
-      <plugin filename="ign_ros2_control-system" name="ign_ros2_control::IgnitionROS2ControlPlugin">
-        <parameters>$(find ur5_controller)/config/controllers.yaml</parameters>
-      </plugin>
-    </xacro:if>
+    <plugin filename="ign_ros2_control-system"
+            name="ign_ros2_control::IgnitionROS2ControlPlugin">
+      <!-- Must match the YAML filename installed by ur5_controller -->
+      <parameters>$(find ur5_controller)/config/ur5_controllers.yaml</parameters>
+    </plugin>
   </gazebo>
 
 </robot>
