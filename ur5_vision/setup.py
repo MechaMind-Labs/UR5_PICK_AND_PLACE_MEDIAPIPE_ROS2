@@ -24,6 +24,8 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'hand_detection = ur5_vision.hand_detection:main',
+            'ur5_hand_controller = ur5_vision.ur5_hand_controller:main',
         ],
     },
 )
