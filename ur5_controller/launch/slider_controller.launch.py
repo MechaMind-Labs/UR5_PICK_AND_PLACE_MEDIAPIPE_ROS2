@@ -1,14 +1,13 @@
 """
 slider_controller.launch.py
 ---------------------------
-One-command launch that:
-  1. Starts Gazebo with the UR5 spawned and ign_ros2_control running
-  2. Spawns joint_state_broadcaster → arm_controller → gripper_controller
-  3. Opens joint_state_publisher_gui (the sliders)
-  4. Runs slider_controller node to forward slider values as JointTrajectory
+Launches Gazebo + controllers + GUI sliders for interactive UR5 control.
 
-Usage:
-  ros2 launch ur5_controller slider_controller.launch.py
+Sequencing:
+  t=0s   → Gazebo starts, ign_ros2_control plugin loads inside sim
+  t=8s   → joint_state_broadcaster spawned (waits up to 30s for CM)
+  t=JSB  → arm_controller + gripper_controller spawned (OnProcessExit)
+  t=14s  → joint_state_publisher_gui + slider_controller start
 """
 
 import os
@@ -36,9 +35,7 @@ def generate_launch_description():
         )
     )
 
-    # ── 2a. joint_state_broadcaster spawner (first — others depend on it) ─────
-    #   Delayed 8 s to let Gazebo + ign_ros2_control fully start.
-    #   Increase this if you see "controller_manager not available" errors.
+    # ── 2a. joint_state_broadcaster ───────────────────────────────────────────
     joint_state_broadcaster_spawner = Node(
         package="controller_manager",
         executable="spawner",
@@ -52,7 +49,7 @@ def generate_launch_description():
 
     delayed_jsb = TimerAction(period=8.0, actions=[joint_state_broadcaster_spawner])
 
-    # ── 2b. arm + gripper spawned AFTER joint_state_broadcaster exits OK ──────
+    # ── 2b. arm + gripper spawned after JSB exits cleanly ─────────────────────
     arm_controller_spawner = Node(
         package="controller_manager",
         executable="spawner",
@@ -75,27 +72,32 @@ def generate_launch_description():
         output="screen",
     )
 
-    # Wait for JSB to be active before loading the trajectory controllers
-    spawn_arm_after_jsb = RegisterEventHandler(
+    spawn_after_jsb = RegisterEventHandler(
         event_handler=OnProcessExit(
             target_action=joint_state_broadcaster_spawner,
             on_exit=[arm_controller_spawner, gripper_controller_spawner],
         )
     )
 
-    # ── 3. joint_state_publisher_gui ─────────────────────────────────────────
-    #   Remapped so it publishes on /joint_commands instead of /joint_states
-    #   (avoids fighting with the real /joint_states from joint_state_broadcaster)
-    #   Delayed until after controllers are loaded so the GUI sources
-    #   /robot_description which is already published by then.
+    # ── 3. joint_state_publisher_gui ──────────────────────────────────────────
+    # IMPORTANT: do NOT pass source_list as a parameter — an empty list becomes
+    # a tuple () which crashes the launch system with:
+    #   "Expected 'value' to be one of [float, int, str, bool, bytes], got tuple"
+    #
+    # The GUI reads /robot_description automatically — no source_list needed.
+    # Remapped so it publishes to /joint_commands instead of /joint_states,
+    # keeping it separate from the real /joint_states from joint_state_broadcaster.
     joint_state_publisher_gui = TimerAction(
-        period=12.0,
+        period=14.0,
         actions=[
             Node(
                 package="joint_state_publisher_gui",
                 executable="joint_state_publisher_gui",
                 name="joint_state_publisher_gui",
-                parameters=[{"use_sim_time": True}],
+                parameters=[{
+                    "use_sim_time": True,
+                    "rate": 50,
+                }],
                 remappings=[
                     ("/joint_states", "/joint_commands"),
                 ],
@@ -104,10 +106,9 @@ def generate_launch_description():
         ],
     )
 
-    # ── 4. slider_controller ─────────────────────────────────────────────────
-    #   Reads /joint_commands → publishes to arm/gripper JointTrajectory topics
+    # ── 4. slider_controller ──────────────────────────────────────────────────
     slider_control_node = TimerAction(
-        period=12.0,
+        period=14.0,
         actions=[
             Node(
                 package="ur5_controller",
@@ -122,7 +123,7 @@ def generate_launch_description():
     return LaunchDescription([
         gazebo,
         delayed_jsb,
-        spawn_arm_after_jsb,
+        spawn_after_jsb,
         joint_state_publisher_gui,
         slider_control_node,
     ])

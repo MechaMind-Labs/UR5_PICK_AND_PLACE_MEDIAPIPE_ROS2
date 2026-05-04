@@ -1,6 +1,6 @@
 controller_manager:
   ros__parameters:
-    update_rate: 500  # Hz — higher rate = more responsive to slider commands
+    update_rate: 500
 
     joint_state_broadcaster:
       type: joint_state_broadcaster/JointStateBroadcaster
@@ -12,10 +12,24 @@ controller_manager:
       type: joint_trajectory_controller/JointTrajectoryController
 
 # ─────────────────────────────────────────────────────────────────────────────
-# ARM controller — 6 UR5 joints
-# open_loop_control: false  → controller reads actual joint state from Ignition
-#                             and uses it; the arm stays where commanded even
-#                             under gravity.
+# ARM controller
+#
+# open_loop_control: true
+#   The JTC does NOT check whether the robot actually reached the commanded
+#   position before accepting the next command.  This is what you want for
+#   interactive slider control: the slider sends a NEW target every ~50 ms
+#   while you drag it.  With open_loop=false the JTC compares "current position"
+#   vs "where the trajectory says we should be right now" and aborts when the
+#   arm is still catching up — causing the "Holding position due to state
+#   tolerance violation" error and the resulting jitter.
+#
+#   The arm stays erect because the joint DAMPING in ur_macro.xacro (100 N·m·s)
+#   resists gravity — that is independent of this flag.
+#
+# constraints: disabled (all set to 0)
+#   trajectory tolerance = 0  → never abort mid-trajectory for positional error
+#   goal_time = 0             → never abort for time overrun
+#   stopped_velocity_tolerance = 0 → don't require zero velocity at goal
 # ─────────────────────────────────────────────────────────────────────────────
 arm_controller:
   ros__parameters:
@@ -34,30 +48,23 @@ arm_controller:
       - position
       - velocity
 
-    # MUST be false so the controller actually holds position using feedback.
-    # true = feedforward only → arm falls under gravity instantly.
-    open_loop_control: false
-
+    open_loop_control: true
     allow_integration_in_goal_trajectories: true
 
-    # How long the controller waits for the first goal before going idle.
-    # Set to a large value so the arm holds its spawn pose on startup.
-    action_monitor_rate: 20.0
-
-    # Constraints — loosen them so slider moves are never rejected
-    # (default tolerances are very tight and reject fast slider moves)
+    # Disable ALL tolerance checking — required for smooth slider operation.
+    # A tolerance of 0.0 means "no limit" in ros2_control JTC.
     constraints:
-      stopped_velocity_tolerance: 0.05
-      goal_time: 0.0  # 0 = don't enforce goal time tolerance
-      shoulder_pan_joint:  { trajectory: 0.2, goal: 0.1 }
-      shoulder_lift_joint: { trajectory: 0.2, goal: 0.1 }
-      elbow_joint:         { trajectory: 0.2, goal: 0.1 }
-      wrist_1_joint:       { trajectory: 0.2, goal: 0.1 }
-      wrist_2_joint:       { trajectory: 0.2, goal: 0.1 }
-      wrist_3_joint:       { trajectory: 0.2, goal: 0.1 }
+      stopped_velocity_tolerance: 0.0
+      goal_time: 0.0
+      shoulder_pan_joint:  { trajectory: 0.0, goal: 0.0 }
+      shoulder_lift_joint: { trajectory: 0.0, goal: 0.0 }
+      elbow_joint:         { trajectory: 0.0, goal: 0.0 }
+      wrist_1_joint:       { trajectory: 0.0, goal: 0.0 }
+      wrist_2_joint:       { trajectory: 0.0, goal: 0.0 }
+      wrist_3_joint:       { trajectory: 0.0, goal: 0.0 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# GRIPPER controller — Robotiq finger_joint only
+# GRIPPER controller
 # ─────────────────────────────────────────────────────────────────────────────
 gripper_controller:
   ros__parameters:
@@ -70,9 +77,9 @@ gripper_controller:
     state_interfaces:
       - position
 
-    open_loop_control: false
+    open_loop_control: true
     allow_integration_in_goal_trajectories: true
     constraints:
-      stopped_velocity_tolerance: 0.05
+      stopped_velocity_tolerance: 0.0
       goal_time: 0.0
-      finger_joint: { trajectory: 0.2, goal: 0.1 }
+      finger_joint: { trajectory: 0.0, goal: 0.0 }
