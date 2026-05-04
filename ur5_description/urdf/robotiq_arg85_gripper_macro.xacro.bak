@@ -1,0 +1,285 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://wiki.ros.org/xacro" name="robotiq_arg85_gripper">
+
+  <!--
+    Robotiq 2F-85 gripper for Ignition Gazebo (ROS 2 Humble).
+
+    WHY MIMIC JOINTS ARE CONVERTED TO FIXED
+    ─────────────────────────────────────────
+    Ignition Gazebo does NOT honour the URDF <mimic> tag in physics.
+    Every revolute joint is simulated independently.  With no controller
+    and no damping the 5 mimic joints (inner/outer knuckles & fingers) are
+    free bodies under gravity → they fly apart the moment the sim starts.
+
+    SOLUTION
+    ─────────
+    Make every mimic joint FIXED, positioned at the half-open pose (0 rad =
+    open gripper).  The gripper will open/close as a rigid assembly driven
+    by finger_joint alone.  robot_state_publisher still propagates the
+    correct TF tree for RViz.
+
+    If you need animated fingers in Gazebo you would need a
+    libignition-gazebo-joint-controller-system plugin for each mimic joint,
+    but for pick-and-place this fixed-finger approach is standard and robust.
+
+    PARAMETERS
+      prefix  — prepended to every link/joint name (pass "" for no prefix)
+      parent  — link the gripper attaches to (usually "tool0")
+      *origin — <origin> block for the attachment joint
+  -->
+  <xacro:macro name="robotiq_2f85_gripper" params="prefix parent *origin">
+
+    <!-- ── Attachment: parent → gripper base ─────────────────────────────── -->
+    <joint name="${prefix}robotiq_85_base_joint" type="fixed">
+      <xacro:insert_block name="origin"/>
+      <parent link="${parent}"/>
+      <child  link="${prefix}robotiq_85_base_link"/>
+    </joint>
+
+    <!-- ── Base link ─────────────────────────────────────────────────────── -->
+    <link name="${prefix}robotiq_85_base_link">
+      <inertial>
+        <origin xyz="0.00021987 0 0.030163" rpy="0 0 0"/>
+        <mass value="0.30915"/>
+        <inertia ixx="0.00028972" ixy="0" ixz="-1.8543E-06"
+                 iyy="0.00030737" iyz="0"  izz="0.00019914"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="package://ur5_description/meshes/ur5_gripper/robotiq_85_base_link_fine.STL"/>
+        </geometry>
+        <material name="${prefix}gripper_dark"><color rgba="0.1 0.1 0.1 1"/></material>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="package://ur5_description/meshes/ur5_gripper/robotiq_85_base_link_coarse.STL"/>
+        </geometry>
+      </collision>
+    </link>
+
+    <!-- ── LEFT OUTER KNUCKLE ────────────────────────────────────────────── -->
+    <link name="${prefix}left_outer_knuckle">
+      <inertial>
+        <origin xyz="0.01783 0 0.00214" rpy="0 0 0"/>
+        <mass value="0.00685"/>
+        <inertia ixx="2.67E-07" ixy="0" ixz="1.46E-07"
+                 iyy="1.39E-06" iyz="0" izz="1.27E-06"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://ur5_description/meshes/ur5_gripper/outer_knuckle_fine.STL"/></geometry>
+        <material name="${prefix}gripper_dark"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://ur5_description/meshes/ur5_gripper/outer_knuckle_coarse.STL"/></geometry>
+      </collision>
+    </link>
+
+    <!--
+      finger_joint: the ONE actuated revolute joint.
+      ros2_control drives this; all others follow as fixed offsets.
+    -->
+    <joint name="${prefix}finger_joint" type="revolute">
+      <origin xyz="0.0306011444260539 0 0.0627920162695395" rpy="0 0 0"/>
+      <parent link="${prefix}robotiq_85_base_link"/>
+      <child  link="${prefix}left_outer_knuckle"/>
+      <axis xyz="0 -1 0"/>
+      <limit lower="0" upper="0.725" velocity="2.0" effort="1000"/>
+      <dynamics damping="5.0" friction="0.1"/>
+    </joint>
+
+    <!-- ── LEFT OUTER FINGER (fixed to left_outer_knuckle) ──────────────── -->
+    <link name="${prefix}left_outer_finger">
+      <inertial>
+        <origin xyz="0.00131 0 0.02154" rpy="0 0 0"/>
+        <mass value="0.02731"/>
+        <inertia ixx="8.52E-06" ixy="0" ixz="3.84E-07"
+                 iyy="6.91E-06" iyz="0" izz="2.25E-06"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://ur5_description/meshes/ur5_gripper/outer_finger_fine.STL"/></geometry>
+        <material name="${prefix}gripper_dark"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://ur5_description/meshes/ur5_gripper/outer_finger_coarse.STL"/></geometry>
+      </collision>
+    </link>
+
+    <!-- FIXED — was revolute+mimic, no change in kinematics for open pose -->
+    <joint name="${prefix}left_outer_finger_joint" type="fixed">
+      <origin xyz="0.0316910442266543 0 -0.00193396375724605" rpy="0 0 0"/>
+      <parent link="${prefix}left_outer_knuckle"/>
+      <child  link="${prefix}left_outer_finger"/>
+    </joint>
+
+    <!-- ── LEFT INNER KNUCKLE ────────────────────────────────────────────── -->
+    <link name="${prefix}left_inner_knuckle">
+      <inertial>
+        <origin xyz="0.01710 0 0.02249" rpy="0 0 0"/>
+        <mass value="0.01109"/>
+        <inertia ixx="4.23E-06" ixy="0" ixz="1.79E-06"
+                 iyy="3.97E-06" iyz="0" izz="3.24E-06"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://ur5_description/meshes/ur5_gripper/inner_knuckle_fine.STL"/></geometry>
+        <material name="${prefix}gripper_dark"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://ur5_description/meshes/ur5_gripper/inner_knuckle_coarse.STL"/></geometry>
+      </collision>
+    </link>
+
+    <!-- FIXED — was revolute+mimic(finger_joint, multiplier=1) -->
+    <joint name="${prefix}left_inner_knuckle_joint" type="fixed">
+      <origin xyz="0.0127000000001501 0 0.0693074999999639" rpy="0 0 0"/>
+      <parent link="${prefix}robotiq_85_base_link"/>
+      <child  link="${prefix}left_inner_knuckle"/>
+    </joint>
+
+    <!-- ── LEFT INNER FINGER ─────────────────────────────────────────────── -->
+    <link name="${prefix}left_inner_finger">
+      <inertial>
+        <origin xyz="0.00603 0 0.00670" rpy="0 0 0"/>
+        <mass value="0.00724"/>
+        <inertia ixx="1.48E-06" ixy="0" ixz="-3.45E-07"
+                 iyy="1.70E-06" iyz="0" izz="4.77E-07"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://ur5_description/meshes/ur5_gripper/inner_finger_fine.STL"/></geometry>
+        <material name="${prefix}gripper_dark"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://ur5_description/meshes/ur5_gripper/inner_finger_coarse.STL"/></geometry>
+      </collision>
+    </link>
+
+    <!-- FIXED — was revolute+mimic(finger_joint, multiplier=-1) -->
+    <joint name="${prefix}left_inner_finger_joint" type="fixed">
+      <origin xyz="0.034585310861294 0 0.0454970193817975" rpy="0 0 0"/>
+      <parent link="${prefix}left_inner_knuckle"/>
+      <child  link="${prefix}left_inner_finger"/>
+    </joint>
+
+    <!-- ── RIGHT INNER KNUCKLE ───────────────────────────────────────────── -->
+    <link name="${prefix}right_inner_knuckle">
+      <inertial>
+        <origin xyz="0.01686 0 0.02267" rpy="0 0 0"/>
+        <mass value="0.01109"/>
+        <inertia ixx="4.27E-06" ixy="0" ixz="1.78E-06"
+                 iyy="3.97E-06" iyz="0" izz="3.20E-06"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://ur5_description/meshes/ur5_gripper/inner_knuckle_fine.STL"/></geometry>
+        <material name="${prefix}gripper_dark"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://ur5_description/meshes/ur5_gripper/inner_knuckle_coarse.STL"/></geometry>
+      </collision>
+    </link>
+
+    <!-- FIXED — was revolute+mimic(finger_joint, multiplier=-1) -->
+    <joint name="${prefix}right_inner_knuckle_joint" type="fixed">
+      <origin xyz="-0.0126999999998499 0 0.0693075000000361" rpy="0 0 3.14159265358979"/>
+      <parent link="${prefix}robotiq_85_base_link"/>
+      <child  link="${prefix}right_inner_knuckle"/>
+    </joint>
+
+    <!-- ── RIGHT INNER FINGER ────────────────────────────────────────────── -->
+    <link name="${prefix}right_inner_finger">
+      <inertial>
+        <origin xyz="0.00603 0 0.00670" rpy="0 0 0"/>
+        <mass value="0.00724"/>
+        <inertia ixx="1.48E-06" ixy="0" ixz="-3.45E-07"
+                 iyy="1.70E-06" iyz="0" izz="4.77E-07"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://ur5_description/meshes/ur5_gripper/inner_finger_fine.STL"/></geometry>
+        <material name="${prefix}gripper_dark"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://ur5_description/meshes/ur5_gripper/inner_finger_coarse.STL"/></geometry>
+      </collision>
+    </link>
+
+    <!-- FIXED — was revolute+mimic(finger_joint, multiplier=1) -->
+    <joint name="${prefix}right_inner_finger_joint" type="fixed">
+      <origin xyz="0.0341060475457406 0 0.0458573878541688" rpy="0 0 0"/>
+      <parent link="${prefix}right_inner_knuckle"/>
+      <child  link="${prefix}right_inner_finger"/>
+    </joint>
+
+    <!-- ── RIGHT OUTER KNUCKLE ───────────────────────────────────────────── -->
+    <link name="${prefix}right_outer_knuckle">
+      <inertial>
+        <origin xyz="0.01781 0 0.00233" rpy="0 0 0"/>
+        <mass value="0.00685"/>
+        <inertia ixx="2.70E-07" ixy="0" ixz="1.56E-07"
+                 iyy="1.39E-06" iyz="0" izz="1.26E-06"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://ur5_description/meshes/ur5_gripper/outer_knuckle_fine.STL"/></geometry>
+        <material name="${prefix}gripper_dark"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://ur5_description/meshes/ur5_gripper/outer_knuckle_coarse.STL"/></geometry>
+      </collision>
+    </link>
+
+    <!-- FIXED — was revolute+mimic(finger_joint, multiplier=-1) -->
+    <joint name="${prefix}right_outer_knuckle_joint" type="fixed">
+      <origin xyz="-0.0306011444258893 0 0.0627920162695395" rpy="0 0 3.14159265358979"/>
+      <parent link="${prefix}robotiq_85_base_link"/>
+      <child  link="${prefix}right_outer_knuckle"/>
+    </joint>
+
+    <!-- ── RIGHT OUTER FINGER ────────────────────────────────────────────── -->
+    <link name="${prefix}right_outer_finger">
+      <inertial>
+        <origin xyz="0.00109 0 0.02155" rpy="0 0 0"/>
+        <mass value="0.02731"/>
+        <inertia ixx="8.52E-06" ixy="0" ixz="3.18E-07"
+                 iyy="6.91E-06" iyz="0" izz="2.24E-06"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://ur5_description/meshes/ur5_gripper/outer_finger_fine.STL"/></geometry>
+        <material name="${prefix}gripper_dark"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://ur5_description/meshes/ur5_gripper/outer_finger_coarse.STL"/></geometry>
+      </collision>
+    </link>
+
+    <!-- FIXED — was already fixed in original -->
+    <joint name="${prefix}right_outer_finger_joint" type="fixed">
+      <origin xyz="0.0317095909367246 0 -0.0016013564954687" rpy="0 0 0"/>
+      <parent link="${prefix}right_outer_knuckle"/>
+      <child  link="${prefix}right_outer_finger"/>
+    </joint>
+
+    <!-- ── TCP link ───────────────────────────────────────────────────────── -->
+    <link name="${prefix}gripper_tcp"/>
+    <joint name="${prefix}gripper_tcp_joint" type="fixed">
+      <origin xyz="0 0 0.13" rpy="0 0 0"/>
+      <parent link="${prefix}robotiq_85_base_link"/>
+      <child  link="${prefix}gripper_tcp"/>
+    </joint>
+
+  </xacro:macro>
+</robot>

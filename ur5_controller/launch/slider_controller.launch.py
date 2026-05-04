@@ -1,22 +1,30 @@
 """
 slider_controller.launch.py
----------------------------
-Launches Gazebo + controllers + GUI sliders for interactive UR5 control.
+----------------------------
+Full launch: Gazebo + controllers + GUI sliders + gripper mimic sync.
 
-Sequencing:
-  t=0s   → Gazebo starts, ign_ros2_control plugin loads inside sim
-  t=8s   → joint_state_broadcaster spawned (waits up to 30s for CM)
-  t=JSB  → arm_controller + gripper_controller spawned (OnProcessExit)
-  t=14s  → joint_state_publisher_gui + slider_controller start
+Node roles
+──────────
+  joint_state_broadcaster      — publishes /joint_states from Ignition physics
+  arm_controller               — JTC for 6 UR5 arm joints
+  gripper_controller           — JTC for finger_joint (the one actuated DOF)
+  gripper_mimic_controller     — JTC for the 5 mimic joints (physics hold)
+  joint_state_publisher_gui    — slider GUI → publishes to /joint_commands
+  slider_controller node       — /joint_commands → arm + gripper JointTrajectory
+  gripper_mimic_controller node— /joint_states finger_joint → mimic JointTrajectory
+
+Sequencing
+──────────
+  t=0s  Gazebo starts, ign_ros2_control plugin loads
+  t=8s  JSB spawner (waits up to 30s for controller_manager)
+  t=JSB arm + gripper + gripper_mimic spawners (OnProcessExit)
+  t=8s  gripper_mimic_controller NODE starts (needs /joint_states, t>=8s fine)
+  t=14s GUI sliders + slider_controller node start
 """
 
 import os
 from launch import LaunchDescription
-from launch.actions import (
-    IncludeLaunchDescription,
-    RegisterEventHandler,
-    TimerAction,
-)
+from launch.actions import IncludeLaunchDescription, RegisterEventHandler, TimerAction
 from launch.event_handlers import OnProcessExit
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
@@ -28,7 +36,7 @@ def generate_launch_description():
     ur5_description_pkg = get_package_share_directory("ur5_description")
     ur5_controller_pkg  = get_package_share_directory("ur5_controller")
 
-    # ── 1. Gazebo ─────────────────────────────────────────────────────────────
+    # ── 1. Gazebo ──────────────────────────────────────────────────────────────
     gazebo = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(ur5_description_pkg, "launch", "gazebo.launch.py")
@@ -36,57 +44,62 @@ def generate_launch_description():
     )
 
     # ── 2a. joint_state_broadcaster ───────────────────────────────────────────
-    joint_state_broadcaster_spawner = Node(
-        package="controller_manager",
-        executable="spawner",
-        arguments=[
-            "joint_state_broadcaster",
-            "--controller-manager", "/controller_manager",
-            "--controller-manager-timeout", "30",
-        ],
+    jsb_spawner = Node(
+        package="controller_manager", executable="spawner",
+        arguments=["joint_state_broadcaster",
+                   "--controller-manager", "/controller_manager",
+                   "--controller-manager-timeout", "30"],
         output="screen",
     )
+    delayed_jsb = TimerAction(period=8.0, actions=[jsb_spawner])
 
-    delayed_jsb = TimerAction(period=8.0, actions=[joint_state_broadcaster_spawner])
-
-    # ── 2b. arm + gripper spawned after JSB exits cleanly ─────────────────────
-    arm_controller_spawner = Node(
-        package="controller_manager",
-        executable="spawner",
-        arguments=[
-            "arm_controller",
-            "--controller-manager", "/controller_manager",
-            "--controller-manager-timeout", "30",
-        ],
+    # ── 2b. arm + gripper + mimic — after JSB exits ───────────────────────────
+    arm_spawner = Node(
+        package="controller_manager", executable="spawner",
+        arguments=["arm_controller",
+                   "--controller-manager", "/controller_manager",
+                   "--controller-manager-timeout", "30"],
         output="screen",
     )
-
-    gripper_controller_spawner = Node(
-        package="controller_manager",
-        executable="spawner",
-        arguments=[
-            "gripper_controller",
-            "--controller-manager", "/controller_manager",
-            "--controller-manager-timeout", "30",
-        ],
+    gripper_spawner = Node(
+        package="controller_manager", executable="spawner",
+        arguments=["gripper_controller",
+                   "--controller-manager", "/controller_manager",
+                   "--controller-manager-timeout", "30"],
         output="screen",
     )
-
+    gripper_mimic_spawner = Node(
+        package="controller_manager", executable="spawner",
+        arguments=["gripper_mimic_controller",
+                   "--controller-manager", "/controller_manager",
+                   "--controller-manager-timeout", "30"],
+        output="screen",
+    )
     spawn_after_jsb = RegisterEventHandler(
         event_handler=OnProcessExit(
-            target_action=joint_state_broadcaster_spawner,
-            on_exit=[arm_controller_spawner, gripper_controller_spawner],
+            target_action=jsb_spawner,
+            on_exit=[arm_spawner, gripper_spawner, gripper_mimic_spawner],
         )
     )
 
-    # ── 3. joint_state_publisher_gui ──────────────────────────────────────────
-    # IMPORTANT: do NOT pass source_list as a parameter — an empty list becomes
-    # a tuple () which crashes the launch system with:
-    #   "Expected 'value' to be one of [float, int, str, bool, bytes], got tuple"
-    #
-    # The GUI reads /robot_description automatically — no source_list needed.
-    # Remapped so it publishes to /joint_commands instead of /joint_states,
-    # keeping it separate from the real /joint_states from joint_state_broadcaster.
+    # ── 3. gripper_mimic_controller NODE ──────────────────────────────────────
+    #    Reads /joint_states → computes mimic positions → publishes to
+    #    /gripper_mimic_controller/joint_trajectory.
+    #    Starts at t=8s (same as JSB) — it will wait for /joint_states naturally.
+    gripper_mimic_node = TimerAction(
+        period=8.0,
+        actions=[
+            Node(
+                package="ur5_controller",
+                executable="gripper_mimic_controller",
+                name="gripper_mimic_controller_node",
+                output="screen",
+                parameters=[{"use_sim_time": True}],
+            )
+        ],
+    )
+
+    # ── 4. GUI sliders ────────────────────────────────────────────────────────
     joint_state_publisher_gui = TimerAction(
         period=14.0,
         actions=[
@@ -94,20 +107,15 @@ def generate_launch_description():
                 package="joint_state_publisher_gui",
                 executable="joint_state_publisher_gui",
                 name="joint_state_publisher_gui",
-                parameters=[{
-                    "use_sim_time": True,
-                    "rate": 50,
-                }],
-                remappings=[
-                    ("/joint_states", "/joint_commands"),
-                ],
+                parameters=[{"use_sim_time": True, "rate": 50}],
+                remappings=[("/joint_states", "/joint_commands")],
                 output="screen",
             )
         ],
     )
 
-    # ── 4. slider_controller ──────────────────────────────────────────────────
-    slider_control_node = TimerAction(
+    # ── 5. slider_controller node ─────────────────────────────────────────────
+    slider_node = TimerAction(
         period=14.0,
         actions=[
             Node(
@@ -124,6 +132,7 @@ def generate_launch_description():
         gazebo,
         delayed_jsb,
         spawn_after_jsb,
+        gripper_mimic_node,
         joint_state_publisher_gui,
-        slider_control_node,
+        slider_node,
     ])

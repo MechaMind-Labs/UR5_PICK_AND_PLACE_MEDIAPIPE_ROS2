@@ -11,26 +11,13 @@ controller_manager:
     gripper_controller:
       type: joint_trajectory_controller/JointTrajectoryController
 
-# ─────────────────────────────────────────────────────────────────────────────
-# ARM controller
-#
-# open_loop_control: true
-#   The JTC does NOT check whether the robot actually reached the commanded
-#   position before accepting the next command.  This is what you want for
-#   interactive slider control: the slider sends a NEW target every ~50 ms
-#   while you drag it.  With open_loop=false the JTC compares "current position"
-#   vs "where the trajectory says we should be right now" and aborts when the
-#   arm is still catching up — causing the "Holding position due to state
-#   tolerance violation" error and the resulting jitter.
-#
-#   The arm stays erect because the joint DAMPING in ur_macro.xacro (100 N·m·s)
-#   resists gravity — that is independent of this flag.
-#
-# constraints: disabled (all set to 0)
-#   trajectory tolerance = 0  → never abort mid-trajectory for positional error
-#   goal_time = 0             → never abort for time overrun
-#   stopped_velocity_tolerance = 0 → don't require zero velocity at goal
-# ─────────────────────────────────────────────────────────────────────────────
+    # Holds the 5 mimic joints in Ignition physics so they don't fly apart.
+    # Commanded by gripper_mimic_controller.py which reads /joint_states
+    # and computes each mimic joint's position from finger_joint.
+    gripper_mimic_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+# ── ARM ──────────────────────────────────────────────────────────────────────
 arm_controller:
   ros__parameters:
     joints:
@@ -40,19 +27,10 @@ arm_controller:
       - wrist_1_joint
       - wrist_2_joint
       - wrist_3_joint
-
-    command_interfaces:
-      - position
-
-    state_interfaces:
-      - position
-      - velocity
-
+    command_interfaces: [position]
+    state_interfaces:   [position, velocity]
     open_loop_control: true
     allow_integration_in_goal_trajectories: true
-
-    # Disable ALL tolerance checking — required for smooth slider operation.
-    # A tolerance of 0.0 means "no limit" in ros2_control JTC.
     constraints:
       stopped_velocity_tolerance: 0.0
       goal_time: 0.0
@@ -63,23 +41,37 @@ arm_controller:
       wrist_2_joint:       { trajectory: 0.0, goal: 0.0 }
       wrist_3_joint:       { trajectory: 0.0, goal: 0.0 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# GRIPPER controller
-# ─────────────────────────────────────────────────────────────────────────────
+# ── GRIPPER (actuated finger_joint only) ─────────────────────────────────────
 gripper_controller:
   ros__parameters:
-    joints:
-      - finger_joint
-
-    command_interfaces:
-      - position
-
-    state_interfaces:
-      - position
-
+    joints: [finger_joint]
+    command_interfaces: [position]
+    state_interfaces:   [position]
     open_loop_control: true
     allow_integration_in_goal_trajectories: true
     constraints:
       stopped_velocity_tolerance: 0.0
       goal_time: 0.0
       finger_joint: { trajectory: 0.0, goal: 0.0 }
+
+# ── GRIPPER MIMIC (5 mimic joints — held by gripper_mimic_controller.py) ─────
+gripper_mimic_controller:
+  ros__parameters:
+    joints:
+      - left_inner_knuckle_joint
+      - left_inner_finger_joint
+      - right_inner_knuckle_joint
+      - right_inner_finger_joint
+      - right_outer_knuckle_joint
+    command_interfaces: [position]
+    state_interfaces:   [position]
+    open_loop_control: true
+    allow_integration_in_goal_trajectories: true
+    constraints:
+      stopped_velocity_tolerance: 0.0
+      goal_time: 0.0
+      left_inner_knuckle_joint:  { trajectory: 0.0, goal: 0.0 }
+      left_inner_finger_joint:   { trajectory: 0.0, goal: 0.0 }
+      right_inner_knuckle_joint: { trajectory: 0.0, goal: 0.0 }
+      right_inner_finger_joint:  { trajectory: 0.0, goal: 0.0 }
+      right_outer_knuckle_joint: { trajectory: 0.0, goal: 0.0 }

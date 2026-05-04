@@ -3,20 +3,6 @@
 
   <xacro:include filename="$(find ur5_description)/urdf/inc/ur_joint_control.xacro" />
 
-  <!--
-    ros2_control block for Ignition Gazebo (ign_ros2_control / ROS 2 Humble).
-
-    Plugin: ign_ros2_control/IgnitionSystem
-      - Reads joint states from the Ignition physics engine
-      - Writes position commands back into Ignition
-      - This is what makes the arm hold its position and respond to
-        JointTrajectory commands from arm_controller.
-
-    DO NOT add the fake FTS / TCP-pose sensors from ur_sensors.xacro here.
-    IgnitionSystem does not implement those state interfaces; including them
-    causes "[WARN] state interface not found" on every tick and can prevent
-    the system from initialising joint states correctly.
-  -->
   <xacro:macro name="ur_ros2_control" params="
     name
     tf_prefix
@@ -28,19 +14,31 @@
         <plugin>ign_ros2_control/IgnitionSystem</plugin>
       </hardware>
 
-      <!-- UR5 arm — 6 DOF revolute joints -->
+      <!-- UR5 arm — 6 DOF -->
       <xacro:ur_joint_control_description
         tf_prefix="${tf_prefix}"
         initial_positions="${initial_positions}"
       />
 
       <!--
-        Robotiq 2F-85 — only the actuated finger_joint goes into ros2_control.
-        The 5 mimic joints (left/right inner/outer knuckle+finger) are purely
-        kinematic; robot_state_publisher propagates them from finger_joint via
-        the <mimic> tags in the URDF.  Putting them here would cause
-        "duplicate joint" errors.
+        Robotiq 2F-85 gripper joints.
+
+        ALL revolute gripper joints (finger_joint + 5 mimic joints) must be
+        declared here. Ignition Gazebo does NOT honour the URDF <mimic> tag
+        in its physics engine — it simulates every revolute joint as an
+        independent rigid body. Without a controller holding each one at the
+        correct mimic position they are free bodies under gravity and fly apart.
+
+        robot_state_publisher reads the <mimic> tags and computes the correct
+        TF for RViz — that is purely kinematic and does NOT affect Gazebo physics.
+
+        The gripper_mimic_controller node reads finger_joint from /joint_states,
+        computes each mimic joint's target (position = finger_joint * multiplier),
+        and publishes a JointTrajectory to gripper_mimic_controller/joint_trajectory
+        keeping all 5 mimic joints pinned in Ignition physics.
       -->
+
+      <!-- Actuated joint — commanded by gripper_controller -->
       <joint name="${tf_prefix}finger_joint">
         <command_interface name="position">
           <param name="min">0.0</param>
@@ -49,7 +47,59 @@
         <state_interface name="position">
           <param name="initial_value">0.0</param>
         </state_interface>
-        <state_interface name="velocity">
+      </joint>
+
+      <!-- mimic × +1 of finger_joint — held by gripper_mimic_controller -->
+      <joint name="${tf_prefix}left_inner_knuckle_joint">
+        <command_interface name="position">
+          <param name="min">0.0</param>
+          <param name="max">0.8757</param>
+        </command_interface>
+        <state_interface name="position">
+          <param name="initial_value">0.0</param>
+        </state_interface>
+      </joint>
+
+      <!-- mimic × −1 of finger_joint -->
+      <joint name="${tf_prefix}left_inner_finger_joint">
+        <command_interface name="position">
+          <param name="min">-0.8757</param>
+          <param name="max">0.0</param>
+        </command_interface>
+        <state_interface name="position">
+          <param name="initial_value">0.0</param>
+        </state_interface>
+      </joint>
+
+      <!-- mimic × −1 of finger_joint -->
+      <joint name="${tf_prefix}right_inner_knuckle_joint">
+        <command_interface name="position">
+          <param name="min">-0.8757</param>
+          <param name="max">0.0</param>
+        </command_interface>
+        <state_interface name="position">
+          <param name="initial_value">0.0</param>
+        </state_interface>
+      </joint>
+
+      <!-- mimic × +1 of finger_joint -->
+      <joint name="${tf_prefix}right_inner_finger_joint">
+        <command_interface name="position">
+          <param name="min">0.0</param>
+          <param name="max">0.8757</param>
+        </command_interface>
+        <state_interface name="position">
+          <param name="initial_value">0.0</param>
+        </state_interface>
+      </joint>
+
+      <!-- mimic × −1 of finger_joint -->
+      <joint name="${tf_prefix}right_outer_knuckle_joint">
+        <command_interface name="position">
+          <param name="min">-0.8757</param>
+          <param name="max">0.0</param>
+        </command_interface>
+        <state_interface name="position">
           <param name="initial_value">0.0</param>
         </state_interface>
       </joint>

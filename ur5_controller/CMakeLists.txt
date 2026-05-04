@@ -13,21 +13,22 @@ find_package(trajectory_msgs REQUIRED)
 find_package(builtin_interfaces REQUIRED)
 find_package(control_msgs REQUIRED)
 
-# Install launch files and config
-install(DIRECTORY
-  launch config
+install(DIRECTORY launch config
   DESTINATION share/${PROJECT_NAME}/
 )
 
-# Install Python package (ur5_controller/__init__.py etc.)
 ament_python_install_package(${PROJECT_NAME})
 
-# Install Python entry-point scripts.
-# The script is installed WITHOUT the .py extension so that
-# ros2 run ur5_controller slider_controller works.
+# Install Python executables (strip .py so ros2 run works without extension)
 install(PROGRAMS
   ${PROJECT_NAME}/slider_controller.py
   RENAME slider_controller
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+install(PROGRAMS
+  ${PROJECT_NAME}/gripper_mimic_controller.py
+  RENAME gripper_mimic_controller
   DESTINATION lib/${PROJECT_NAME}
 )
 

@@ -1,10 +1,8 @@
-import os
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, RegisterEventHandler
 from launch.event_handlers import OnProcessExit
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
-from ament_index_python.packages import get_package_share_directory
 
 
 def generate_launch_description():
@@ -12,54 +10,57 @@ def generate_launch_description():
     use_sim_time = LaunchConfiguration("use_sim_time")
 
     use_sim_time_arg = DeclareLaunchArgument(
-        "use_sim_time",
-        default_value="true",
-        description="Use simulation (Gazebo) clock if true"
+        "use_sim_time", default_value="true",
+        description="Use simulation clock"
     )
 
-    # ── controller_manager is already started by ign_ros2_control inside Gazebo.
-    #    We only need spawners here.
-
-    joint_state_broadcaster_spawner = Node(
-        package="controller_manager",
-        executable="spawner",
-        arguments=[
-            "joint_state_broadcaster",
-            "--controller-manager", "/controller_manager",
-        ],
-        parameters=[{"use_sim_time": use_sim_time}],
+    # ── 1. joint_state_broadcaster — must come first ──────────────────────────
+    jsb_spawner = Node(
+        package="controller_manager", executable="spawner",
+        arguments=["joint_state_broadcaster",
+                   "--controller-manager", "/controller_manager",
+                   "--controller-manager-timeout", "30"],
+        output="screen",
     )
 
-    arm_controller_spawner = Node(
-        package="controller_manager",
-        executable="spawner",
-        arguments=[
-            "arm_controller",
-            "--controller-manager", "/controller_manager",
-        ],
-        parameters=[{"use_sim_time": use_sim_time}],
+    # ── 2. arm + gripper (actuated) — after JSB ───────────────────────────────
+    arm_spawner = Node(
+        package="controller_manager", executable="spawner",
+        arguments=["arm_controller",
+                   "--controller-manager", "/controller_manager",
+                   "--controller-manager-timeout", "30"],
+        output="screen",
     )
 
-    gripper_controller_spawner = Node(
-        package="controller_manager",
-        executable="spawner",
-        arguments=[
-            "gripper_controller",
-            "--controller-manager", "/controller_manager",
-        ],
-        parameters=[{"use_sim_time": use_sim_time}],
+    gripper_spawner = Node(
+        package="controller_manager", executable="spawner",
+        arguments=["gripper_controller",
+                   "--controller-manager", "/controller_manager",
+                   "--controller-manager-timeout", "30"],
+        output="screen",
     )
 
-    # Spawn arm and gripper controllers AFTER joint_state_broadcaster is ready
-    delay_arm = RegisterEventHandler(
+    # ── 3. gripper_mimic_controller — after JSB ───────────────────────────────
+    #    Holds the 5 mimic joints in Ignition physics.
+    #    Must be active before the sim physics can stabilise the gripper.
+    gripper_mimic_spawner = Node(
+        package="controller_manager", executable="spawner",
+        arguments=["gripper_mimic_controller",
+                   "--controller-manager", "/controller_manager",
+                   "--controller-manager-timeout", "30"],
+        output="screen",
+    )
+
+    # Spawn all trajectory controllers only after JSB is active
+    spawn_after_jsb = RegisterEventHandler(
         event_handler=OnProcessExit(
-            target_action=joint_state_broadcaster_spawner,
-            on_exit=[arm_controller_spawner, gripper_controller_spawner],
+            target_action=jsb_spawner,
+            on_exit=[arm_spawner, gripper_spawner, gripper_mimic_spawner],
         )
     )
 
     return LaunchDescription([
         use_sim_time_arg,
-        joint_state_broadcaster_spawner,
-        delay_arm,
+        jsb_spawner,
+        spawn_after_jsb,
     ])
